@@ -1,0 +1,63 @@
+package GetUnitCollision
+
+/*==================================================================================================*
+*                                                                                             
+*    System Description :      
+*       
+*       By Nestharus (vJASS version), translated to Wurst.
+*
+*       Retrieves collision for a unit (different from pathing map)
+*
+*       Accurate up to 2 decimals
+*                                                                                   
+*===================================================================================================*
+*
+*   Requirements :
+*       Import Table for :
+*           1. Storing calculated result to prevent recalculation of collision for same unit */
+import Table
+
+/*
+==================================================================================================*/
+
+
+
+
+
+/*============================================Globals=============================================*/
+Table unitCollisionTable = new Table()
+/*================================================================================================*/
+
+
+
+
+
+/*======================================Extension Functions=======================================*/
+function unit.calculateCollision(vec2 v, int unitTypeId) returns real
+    var low = 0.
+    var high = 300.
+    var mid = 150.
+
+    while(low + .01 < high)
+        if IsUnitInRangeXY(this, v.x+mid, v.y, 0)
+            low = mid
+        else
+            high = mid
+
+        mid = (low+high)/2.
+    
+    mid = ((mid+.005)*100.).toInt().toReal() / 100.
+
+    unitCollisionTable.saveReal(unitTypeId, mid)
+
+    return mid
+
+/** Obtain unit collision up to 2 decimal places*/
+public function unit.getCollision() returns real
+    let unitTypeId = this.getTypeId()
+
+    if unitCollisionTable.hasReal(unitTypeId)
+        return unitCollisionTable.loadReal(unitTypeId)
+
+    return this.calculateCollision(this.getPos(), unitTypeId)
+/*================================================================================================*/

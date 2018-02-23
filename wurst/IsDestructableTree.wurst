@@ -1,0 +1,77 @@
+package IsDestructableTree
+/*==================================================================================================*
+*                                                                                             
+*    System Description :      
+*                 
+*       By BPower (vJASS version), translated to Wurst.
+*                                              
+*       Detect whether a destructable is a tree or not.
+*
+*===================================================================================================*
+*
+*   Requirements :
+*       Import UnitIndexer which uses :
+*           1. deindex()                                               */
+import UnitIndexer
+
+/*
+*===================================================================================================*
+*
+*   Credits :
+*
+*       To PitzerMike - for IsDestructableTree
+*
+*==================================================================================================*
+*
+*   Configuration : 
+*                                                                                                 */                                     
+constant HARVESTER_UNIT_ID  = 'hpea'        //human peasant
+constant HARVERST_ABILITY   = 'Ahrl'        //ghoul harvest
+constant HARVEST_ORDER_ID   = 0xD0032       //harvest order (852018)
+constant NEUTRAL_PLAYER     = players[14]   //PLAYER_NEUTRAL_PASSIVE
+
+unit     harvester
+/*================================================================================================*/
+
+
+
+
+
+/*======================================Extension Functions=======================================*/
+/**Check if this destructable is a tree*/
+public function destructable.isTree() returns bool
+    //851973 is the order id of stunned, it will interrupt the preceding harvest order
+    return harvester.issueTargetOrderById(HARVEST_ORDER_ID, this) and harvester.issueImmediateOrderById(851973)
+
+/**Check if this destructable is dead*/
+public function destructable.isDead() returns bool
+    return GetWidgetLife(this) <= .405
+
+/**Check if this destructable is alive*/
+public function destructable.isAlive() returns bool
+    return GetWidgetLife(this) > .405
+
+/**Check if this tree is alive, only applicable for tree*/
+public function destructable.isTreeAlive() returns bool
+    return this.isAlive() and this.isTree()
+
+/**Kill this tree, return true if success*/
+public function destructable.killTree() returns bool
+    if this.isTreeAlive()
+        this.kill()
+        return true
+    return false
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+init
+    harvester = createUnit(NEUTRAL_PLAYER, HARVESTER_UNIT_ID, vec2(0, 0), angle(0))
+        ..deindex()
+        ..addAbility(HARVERST_ABILITY)
+        ..addAbility(LOCUST_ID)
+        ..hide()
+/*================================================================================================*/

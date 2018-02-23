@@ -1,0 +1,10 @@
+package MapTest
+
+import MooseCharge_config
+
+
+init
+    for int i = 0 to 2
+        var u =createUnit(Player(0), MOOSE_ID, players[0].getStartLocation(), angle(0))
+                ..addAbility(MOOSE_CHARGE_SPELL_ID)
+        SetHeroLevel(u, 10, false)

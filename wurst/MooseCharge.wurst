@@ -1,0 +1,1019 @@
+package MooseCharge
+
+/*==================================================================================================*
+*                                                                                             
+*   Spell Description :
+*      
+*       Moose charge toward its facing, unit hit will be knockbacked,
+*       and applying effects depend on owner of unit and type of unit.
+*
+*       Channel Time  : 2 seconds
+*       Charging Time : 8 seconds
+*       
+*       Enemy unit : Speed*0.2 damage, apply red gem debuff; second hit ban the target,
+*                    silence and reducing 30% attack speed and 30% movement speed
+*
+*       Ally unit : Heal for speed*0.1, apply green gem buff; second hit praise the target,
+*                   heals for 1% maximum hitpoint of the target for 10 seconds
+*
+*       Structure : Speed*0.3 damage, terminate spell immediately. Spawn 2 assistance to assist
+*                   him, lasts for 15 seconds.
+*                                                                                   
+*===================================================================================================*
+*
+*       Import LinkedListModule for :
+*           1. Turn class into LinkedList                   */
+import LinkedListModule
+
+/*
+*       Import IsPathWalkable which uses :
+*           1. isPathWalkable()                             */
+import IsPathWalkable
+
+/*
+*       Import MapBounds which uses :
+*           1. inBounds()                                   */
+import MapBounds
+
+/*
+*       Import ClosureForGroups which uses :
+*           1. forUnitsInRange()                            */
+import ClosureForGroups
+
+/*
+*       Import ClosureTimers which uses :
+*           1. doAfter()                                    */
+import ClosureTimers
+
+/*
+*       Import Knockback3 which uses :
+*           1. class Knockback3                             */
+import Knockback3
+
+/*
+*       Import Stun which uses :
+*           1. Stun.apply()                                 */
+import Stun
+
+/*
+*       Import IsDestructableTree for :
+*           1. Checking if destructable is a tree           */
+import IsDestructableTree
+
+/*
+*       Import GetUnitCollision for :
+*           1. Obtain structure collision size              */
+import GetUnitCollision
+
+/*
+*       Import HashMap for :
+*           1. Linking unit handle id to struct instance    */
+import HashMap
+
+/*
+*       Import TimerUtils which uses :
+*           1. getTimer()
+*           2. release()                                    */
+import TimerUtils
+
+/*
+*       Import DummyRecycler for :
+*           1. Dummy for casting spell                      */
+import DummyRecycler
+
+/*
+*
+*       Import BonusHandler for modifying : 
+*           1. Attack speed                                 */
+import BonusHandler
+
+/*
+*       Import Assets which uses :
+*           1. Abilities.defendCaster               
+*           2. Abilities.shockwaveMissle                    */
+import Assets
+
+/*
+*       Import ObjectIdGenerator for :
+*           1. Generate effect dummy unit id                */
+import ObjectIdGenerator
+
+/*
+*       Import UnitObjEditing for :
+*           1. Generate effect dummy unit                   */
+import UnitObjEditing
+
+/*
+*==================================================================================================*
+*
+*   Import Instructions :
+*
+*       1. Copy 8 wurst files
+*           - BonusHandler.wurst
+*           - BonusHandlerConfig.wurst
+*           - GetUnitCollision.wurst
+*           - IsDestructableTree.wurst
+*           - IsPathWalkable.wurst
+*           - Stun.wurst
+*           - MooseCharge.wurst
+*           - MooseCharge_config.wurst
+*          into your project
+*       2. Import the required assests you would like to use
+*       3. Configure the settings in MooseCharge_config.wurst to suit your need
+*       4. Done
+*
+*==================================================================================================*
+*
+*   Configuration :
+*
+*       Configuration should be done in MooseCharge_config.wurst
+*
+*       Knocback related configuration should be done in wurstStdlib2 : Knockback3.wurst 
+*
+/*================================================================================================*/
+
+
+
+
+
+/*============================================Globals=============================================*/
+/** Spell id*/
+@configurable public constant MOOSE_CHARGE_SPELL_ID         = compiletime(ABIL_ID_GEN.next())
+
+/** Spell channel time*/                                  
+@configurable constant CHANNEL_TIME                         = 2.0
+
+/** Determine if spell is interruptable while caster is channelling*/
+@configurable constant INTERRUPTABLE_CHANNEL                = true
+
+/** Determine if spell is interruptable while caster is charging*/
+@configurable constant INTERRUPTABLE_CHARGING               = true
+
+/** Determine if unit will still enter deacceleration after charging get interrupted*/
+@configurable constant INTTERUPT_DEACCELERATE               = true
+
+/** Spell duration after completed charging time*/
+@configurable constant SPELL_DURATION                       = 8.0
+
+/** Determine the unit turn speed once spell actiavted*/
+@configurable constant TURN_SPEED                           = 0.05
+
+/** Unit's channel animation index*/
+@configurable constant CHANNEL_ANIMATION_INDEX              = 1
+
+/** Unit's channel animation speed*/
+@configurable constant CHANNEL_ANIMATION_TIMESCALE          = 1.
+
+/** Unit's charge animation index*/
+@configurable constant CHARGE_ANIMATION_INDEX               = 1
+
+/** Unit's charge animation speed*/
+@configurable constant CHARGE_ANIMATION_TIMESCALE           = 1.
+
+/** Starting charging speed*/
+@configurable constant START_SPEED                          = 100.
+
+/** End speed of the spell, which if below the defined value, spell will be terminated once hitting any obstacle*/
+@configurable constant END_SPEED                            = 150.
+
+/** Maximum charging speed*/
+@configurable constant MAX_SPEED                            = 500.
+
+/** Determine if caster will destroy tree once hit*/
+@configurable constant DESTROY_TREE                         = true
+
+/** Destroy tree if caster hit tree with speed above of this variable*/
+@configurable constant DESTROY_TREE_SPEED_THRESHOLD         = 300.
+
+/** Determine if deacceleration will still apply after hitting a unit*/
+@configurable constant DEACCELERATE_AFTER_HIT               = false
+
+/** Determine if spell will be continued even after hitting a unit*/
+@configurable constant STOP_AFTER_HIT                       = false
+
+/** Periodic run time*/
+@configurable constant PERIODIC_TIME                        = 0.03125
+
+/** Stun duration when caster hit non-pathable path/building*/
+@configurable constant STUN_DURATION                        = 3.
+
+/** Effect that will be displayed when moose starts channeling phase*/
+@configurable constant EFFECT_CHANNEL                       = Abilities.shockwaveMissile
+
+/** EFFECT_CHANNEL attachment point for the caster*/
+@configurable constant CHANNEL_ATTACH_POINT                 = "chest"
+
+/** Effect that will be applied when moose started it charging phase*/
+@configurable constant EFFECT_CHARGING                      = Abilities.shockwaveMissile
+
+/** EFFECT_CHARGING attachment point*/
+@configurable constant CHARGE_ATTACH_POINT                  = "chest"
+
+/** Effect that will be applied when hitting non-pathable path*/
+@configurable constant EFFECT_HIT_PATH                      = Abilities.defendCaster
+
+/** Effect that will be applied when hitting a building*/
+@configurable constant EFFECT_HIT_BUILDING                  = Abilities.defendCaster
+
+/** Effect that will be applied when hitting a unit*/
+@configurable constant EFFECT_HIT_UNIT                      = Abilities.defendCaster
+
+/** EFFECT_HIT_PATH and EFFECT_HIT_UNIT attachment point*/
+@configurable constant HIT_ATTACH_POINT                     = "overhead"
+
+/** Banned effect that applied to banned unit*/
+@configurable constant BANNED_EFFECT_PATH                   = "Banhammer.mdx"
+
+/** BANNED_EFFECT attachment point*/
+@configurable constant BANNED_EFFECT_ATTACH_POINT           = "overhead"
+
+/** Heal effect that applied to praised unit*/
+@configurable constant HEAL_EFFECT_PATH                     = "Healing Surge.mdx"
+
+/** HEAL_EFFECT attachment point*/
+@configurable constant HEAL_EFFECT_ATTACH_POINT             = "origin"
+
+/** Determine the rect hit size of x for detecting hittable unit*/
+@configurable constant HIT_SIZE_X                           = 256
+
+/** Determine the rect hit size of y for detecting hittable unit*/
+@configurable constant HIT_SIZE_Y                           = 256
+
+/** Damage attack type to hit unit*/
+@configurable constant ATTACK_TYPE                          = ATTACK_TYPE_NORMAL
+
+/** Applies when unit get knockback, where 1 unit move speed of caster will be multiplied by CHARGE_SPEED_MULTIPLIER as default starting velocity for knockback unit*/
+@configurable constant CHARGE_SPEED_MULTIPLIER              = 4.
+
+/** Define the trajectory angle of knockback unit*/
+@configurable constant KNOCKBACK_AIR_ANGLE                  = angle(bj_PI/2)
+
+/** Constant acceleration that controls the increase/decrease of acceleration*/
+@configurable constant ACCELERATION                         = 10
+
+/** Height of effect above the unit*/
+@configurable constant DEBUFF_EFFECT_HEIGHT                 = 100.
+
+/** Duration for the debuff applied to units*/
+@configurable constant DEBUFF_EFFECT_DURATION               = 5.
+
+/** Reduce attack speed*/
+@configurable constant REDUCED_ATTACK_SPEED                 = 30 //30% reduction
+
+/** Reduce movement speed*/
+@configurable constant REDUCED_MOVEMENT_SPEED               = 30
+
+/** Banned duration, which silences and reducing unit's attack speed and movement speed*/
+@configurable constant BANNED_DURATION                      = 5.
+
+/** Healing rate which based on hit unit's max hp per second*/
+@configurable constant HEAL_RATE                            = 0.01 //1% per seconds
+
+/** Healing duration*/
+@configurable constant HEAL_DURATION                        = 10.
+
+/** Assistance unit id to be created after hitting building*/
+@configurable constant ASSISTANCE_UNIT_ID                   = 'hfoo'
+
+/** Amount of assistance unit to be created*/
+@configurable constant ASSISTANCE_AMOUNT                    = 2
+
+/** Assitance's lifetime after they are created*/
+@configurable constant ASSISTANCE_LIFETIME                  = 15.
+
+/** Animation index which determines EFFECT_UNIT color*/
+@configurable constant HEAL_EFFECT_ANIMATION_INDEX          = 1
+
+/** Animation index which determines EFFECT_UNIT color*/
+@configurable constant BANNED_EFFECT_ANIMATION_INDEX        = 2
+
+/** Animation index which determines EFFECT_UNIT color*/
+@configurable constant ASSISTANCE_EFFECT_ANIMATION_INDEX    = 3
+
+@configurable constant BANNED_ABILITY_ID                    = compiletime(ABIL_ID_GEN.next())
+@configurable constant HEAL_ABILITY_ID                      = compiletime(ABIL_ID_GEN.next())
+@configurable constant RED_GEM_ABILITY_ID                   = compiletime(ABIL_ID_GEN.next())
+@configurable constant GREEN_GEM_ABILITY_ID                 = compiletime(ABIL_ID_GEN.next())
+@configurable constant BLUE_GEM_ABILITY_ID                  = compiletime(ABIL_ID_GEN.next())
+
+/** Order id for ban ability*/
+@configurable constant BANNED_ORDER_STRING                  = "soulburn"
+
+/** Range to detect the large buildings which is out of the selection of HIT_SIZE_X/Y*/
+constant DETECT_RANGE                                       = 500.
+
+/** Addition collision which added to the buildings, which they usually have larger collision than calculated result*/
+constant DELTA_COLLISION                                    = 96.
+
+/** Time to wait before destroying HIT_EFFECT*/
+constant DESTROY_TIME                                       = 1.5
+
+/** Cargo hold ability id*/
+constant CARGO_HOLD                                         = 'Abun'
+
+/** Half offset of */
+constant HALF_X_OFFSET                                      = HIT_SIZE_X/2
+
+/** Half offset of */
+constant HALF_Y_OFFSET                                      = HIT_SIZE_Y/2
+
+constant orderTrigger                                       = CreateTrigger()
+
+constant EFFECT_UNIT_ID                                     = compiletime(UNIT_ID_GEN.next())
+
+constant SPELL_CASTER                                       = createUnit(DUMMY_PLAYER, DUMMY_UNIT_ID, vec2(0, 0), angle(0))
+
+/** Function for filtering out unit who shouldn't get damaged*/
+@configurable function hittable(unit _toHit) returns bool
+    return not _toHit.isType(UNIT_TYPE_FLYING)
+
+/** Function which determine the damage dealt to enemy units*/
+@onfigurable function damageUnit(unit _caster, unit _toDamage, real _casterSpeed) returns real
+    return 0.2*_casterSpeed
+
+/** Function which determine the damage dealt to building*/
+@onfigurable function damageBuilding(unit _caster, unit _toDamage, real _casterSpeed) returns real
+    return 0.3*_casterSpeed
+
+/** Function which determine the healing amount to ally units*/
+@configurable function healAmount(real _speed) returns real
+    return _speed*0.1
+
+/** Function determine the decelerate after hitting a unit/destructable*/
+@configurable function decelerate(unit _hit, destructable _destHit) returns real
+    if not _hit == null //if hit unit
+        return 100.
+    else if not _destHit == null and _destHit.isTree() //if hit tree
+        return 150.
+
+    return 0.
+
+/** Function define the circumstances where if occurs, channelling will be interrupted*/
+@configurable function chanellingInterrupt(unit _caster) returns bool
+    return false
+
+/** Function define the circumstances where if occur, charging will be interrupted*/
+@configurable function chargingInterrupt(unit _caster) returns bool
+    return false
+/*================================================================================================*/
+
+
+
+
+
+/*=============================================Tuples=============================================*/
+/**Charge status which belongs to a unit, determine if unit in Charge class, belongs to which instance, and what SpellPhase is the unit in*/
+tuple ChargeStatus(bool contains, Charge instance, SpellPhase sp)
+/*================================================================================================*/
+
+
+
+
+
+/*=============================================Enums==============================================*/
+/**Determine the current spell phase for a unit in Charge class*/
+enum SpellPhase
+    Channel
+    Charging
+    Deaccelerate
+/*================================================================================================*/
+
+
+
+
+
+/*======================================Extension Functions=======================================*/
+/**Obtain this unit charge status in Charge class*/
+function unit.getChargeStatus() returns ChargeStatus
+    return Charge.getStatus(this)
+
+/**Create a new Charge instance for this unit*/
+function unit.newCharge()
+    new Charge(this)
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+class Charge
+    use LinkedListModule
+
+    //----------------------Ordinary Globals----------------------
+    private         unit        caster
+
+    private         player      owner
+
+    /**Distance increase per PERIODIC_TIME, changes according to phaseTime*/
+    private         real        distPerTick
+    private         real        curSpeed        = START_SPEED
+    /**Time left for the phase, only used in Channel phase and Charging phase*/
+    private         real        timeLeft        = CHANNEL_TIME
+
+    private         effect      channelEffect
+    private         effect      chargeEffect
+
+    /**Will be true if spell instance need to be stopped*/
+    private         bool        stop            = false
+    /**Will be true if caster needs to be stunned while spell stopped*/
+    private         bool        stun            = false
+
+    private static  timer       tim
+    private static  group       g               = CreateGroup()
+    //------------------------------------------------------------
+
+
+    //-----------------------Tuple Globals------------------------
+    private         vec2        curPos
+    private         angle       ang
+    //------------------------------------------------------------
+
+
+    //------------------------Enum Globals------------------------
+    private         SpellPhase  sp              = Channel
+    //------------------------------------------------------------
+
+
+
+    //===================Creation/Destroy Functions===================
+    construct(unit caster)
+        this.caster = caster
+            ..setPropWindow(0.)
+            ..addAbility(CARGO_HOLD)
+            ..setAnimation(CHANNEL_ANIMATION_INDEX)
+            ..setTimeScale(CHANNEL_ANIMATION_TIMESCALE)
+            ..setTurnSpeed(TURN_SPEED)
+        
+        this.curPos = caster.getPos()
+        this.owner = caster.getOwner()
+        this.channelEffect = caster.addEffect(EFFECT_CHANNEL, CHANNEL_ATTACH_POINT)
+
+        if Charge.size == 1
+            orderTrigger.enable()
+            tim = getTimer()
+            tim.startPeriodic(PERIODIC_TIME, function periodic)
+
+    ondestroy
+        orderTrigger.disable() //no infinite trigger fire event
+
+        //remove all applied effects
+        this.caster
+            ..removeAbility(CARGO_HOLD)
+            ..setPropWindow(GetUnitDefaultPropWindow(this.caster))
+            ..setTimeScale(1.)
+            ..issueImmediateOrder("stop")
+            ..setTurnSpeed(GetUnitDefaultTurnSpeed(this.caster))
+
+        if this.sp == SpellPhase.Channel
+            this.channelEffect.destr()
+        else
+            this.chargeEffect.destr()
+
+        if Charge.size == 1
+            tim.release()
+        else
+            orderTrigger.enable() //reenable the trigger
+    //================================================================
+
+
+
+    //========================Effects Functions=======================
+    /**Function that will apply effect after hitting enemy unit*/
+    private function enemyHit(unit toDamage)
+        //apply damage
+        this.caster.damageTarget(toDamage, damageUnit(this.caster, toDamage, this.curSpeed))
+
+        var deInstance = DebuffEffect.get(toDamage)
+            
+        if deInstance != null and deInstance.applyable()
+            deInstance.renew(BANNED_DURATION, true)
+            //Silence, reduce attack speed and movement speed
+            new Ban(toDamage)
+        else if deInstance == null and toDamage.isAlive()
+            //apply debuff
+            new DebuffEffect(toDamage, BANNED_EFFECT_ANIMATION_INDEX, DEBUFF_EFFECT_DURATION, RED_GEM_ABILITY_ID)
+            
+    /**Function that will apply effect after hitting ally unit*/
+    private function allyHit(unit toHeal)
+        //apply healing
+        toHeal.addHP(healAmount(this.curSpeed))
+
+        var deInstance = DebuffEffect.get(toHeal)
+
+        if deInstance != null and deInstance.applyable()
+            deInstance.renew(HEAL_DURATION, true)
+            //Heal unit over time
+            new Heal(toHeal)
+        else if deInstance == null
+            //apply debuff
+            new DebuffEffect(toHeal, HEAL_EFFECT_ANIMATION_INDEX, DEBUFF_EFFECT_DURATION, GREEN_GEM_ABILITY_ID)
+
+    /**Function that will apply effect after hitting structure*/
+    private function structureHit(unit toDamage)
+        //Effect apply to caster after hitting a building
+        this.applyHitEffect(EFFECT_HIT_BUILDING)
+
+        //apply damage
+        this.caster.damageTarget(toDamage, damageBuilding(this.caster, toDamage, this.curSpeed))
+
+        //create assistance
+        for int i = 1 to ASSISTANCE_AMOUNT
+            let u = createUnit(this.owner, ASSISTANCE_UNIT_ID, this.curPos, this.ang)
+                ..setTimedLife(ASSISTANCE_LIFETIME)
+
+            if u.isAlive()
+                new DebuffEffect(u, ASSISTANCE_EFFECT_ANIMATION_INDEX, ASSISTANCE_LIFETIME, BLUE_GEM_ABILITY_ID)
+                    ..renew(ASSISTANCE_LIFETIME, false) //prevent second buff apply
+
+        //terminate spell
+        this.stop = true
+        this.stun = true
+    //================================================================
+
+
+
+    //=========================Core Functions=========================
+    /**Terminate the spell immediately, by definining whether to apply `stun` effect to caster, and apply `dmgAmount` to `target` (damage will be skipped if `dmgAmount` is 0 or `target` is null)*/
+    private function terminate(bool stun)
+        if stun
+            Stun.apply(this.caster, STUN_DURATION, false)
+        destroy this
+
+    /**Apply hit effect to caster that will be destroyed after DESTROY_TIME*/
+    private function applyHitEffect(string effectPath)
+        let e = this.caster.addEffect(effectPath, HIT_ATTACH_POINT)
+        doAfter(DESTROY_TIME, () -> e.destr())
+
+    /**Update caster facing and postion. Any unit caught within range of caster will be damaged */
+    private function update()
+        //update caster facing angle
+        this.ang = this.caster.getFacingAngle()
+        
+        //get caster next position
+        var nextPos = this.curPos.polarOffset(this.ang, this.distPerTick)
+
+        //if next position is within map bound
+        if nextPos.inBounds()
+            //check if linear path from caster to next position is walkable
+            var path = isPathWalkable(this.curPos, nextPos)
+
+            rect r = null
+            
+            //if walkable
+            if path.walkable
+                this.curPos = nextPos
+
+                //update caster position
+                this.caster.setXY(nextPos)
+                
+                //if caster died while charging, no damage can be dealt
+                if this.caster.isAlive()
+                    //create a rect which centered at nextPos with width of HIT_SIZE_X and height of HIT_SIZE_Y 
+                    r = Rect(nextPos.x-HALF_X_OFFSET, nextPos.y-HALF_Y_OFFSET, nextPos.x+HALF_X_OFFSET, nextPos.y+HALF_Y_OFFSET)
+            //not walkable, terminate spell
+            else
+                if this.caster.isAlive()
+                    //create a rect which centered at last pathable X/Y with width of HIT_SIZE_X and height of HIT_SIZE_Y 
+                    r = Rect(path.v.x-HALF_X_OFFSET, path.v.y-HALF_Y_OFFSET, path.v.x+HALF_X_OFFSET, path.v.y+HALF_Y_OFFSET)
+
+                //update caster position
+                this.curPos = path.v
+
+                //update caster position to last pathable path
+                this.caster.setXY(path.v)
+
+                //Effect apply to caster after hitting non-pathable path
+                this.applyHitEffect(EFFECT_HIT_PATH)
+
+                this.terminate(true)  
+            
+            if this.caster.isAlive()
+                //Enum all units within DETECT_RANGE
+                g.enumUnitsInRange(this.curPos, DETECT_RANGE)
+
+                for u from g
+                    //if position of unit is inside the hit range of caster
+                    if not u == this.caster and hittable(u)
+                        if r.contains(u.getPos())
+                            if u.isType(UNIT_TYPE_STRUCTURE)
+                                this.structureHit(u)
+                            else
+                                //Effect apply to caster after hitting a unit
+                                this.applyHitEffect(EFFECT_HIT_UNIT)
+
+                                //knock back unit
+                                //input : velocity      - charging speed * CHARGE_SPEED_MULTIPLIER
+                                //        groupAngle    - angle from charging unit to hit unit
+                                //        airAngle      - KNOCKBACK_AIR_ANGLE
+                                Knockback3.add(u, this.curSpeed*CHARGE_SPEED_MULTIPLIER, nextPos.angleTo(u.getPos()), KNOCKBACK_AIR_ANGLE)
+                                
+                                //if enum unit is ally of caster
+                                if u.getOwner().isAllyOf(this.owner)
+                                    this.allyHit(u)
+                                else
+                                    this.enemyHit(u)
+
+                                if STOP_AFTER_HIT
+                                    this.stop = true
+                                else if DEACCELERATE_AFTER_HIT
+                                    if this.minusSpeed(decelerate(u, null))
+                                        this.stop = true
+                        else
+                            //if not in range, check if unit is type of structure and
+                            //if distance from structure to caster is less than structure collision size
+                            if u.isType(UNIT_TYPE_STRUCTURE) and u.getPos().distanceTo(this.curPos) <= u.getCollision()+DELTA_COLLISION
+                                this.structureHit(u)
+                    
+                    if this.stop
+                        break
+
+                if not this.stop
+                    //if user enabled destroy tree
+                    if DESTROY_TREE
+                        forDestructablesInRect(r, (destructable d) -> begin
+                            if not this.stop
+                                if this.curSpeed >= DESTROY_TREE_SPEED_THRESHOLD
+                                    if d.killTree()
+                                        this.minusSpeed(decelerate(null, d))
+                                else if d.isTreeAlive()
+                                    this.stop = true
+                                    this.stun = true
+                        end)
+
+                r.remove()
+
+                //if speed is below END_SPEED
+                if this.stop
+                    this.terminate(stun)
+        else
+            this.terminate(true)
+
+    private static function periodic()
+        for instance in Charge
+            if instance.sp == SpellPhase.Channel
+            //-----------Phase 1 : Channel-----------
+                instance.timeLeft -= PERIODIC_TIME
+
+                //if charging time is done
+                if instance.timeLeft <= 0
+                    instance.sp = SpellPhase.Charging
+                    instance.timeLeft = SPELL_DURATION
+                    instance.channelEffect.destr()
+
+                    //set caster charging animation/speed
+                    instance.caster
+                        ..setAnimation(CHARGE_ANIMATION_INDEX)
+                        ..setTimeScale(CHARGE_ANIMATION_TIMESCALE)
+
+                    //apply charging effect
+                    instance.chargeEffect = instance.caster.addEffect(EFFECT_CHARGING, CHARGE_ATTACH_POINT)
+                //if interruptable and defined interrupt condition is true
+                else if INTERRUPTABLE_CHANNEL and chanellingInterrupt(instance.caster)
+                    instance.terminate(false)
+            //------------End of Phase 1-------------
+            else if instance.sp == SpellPhase.Charging
+            //----------Phase 2 : Charging-----------
+                instance.timeLeft -= PERIODIC_TIME
+
+                //if reached maximum charging time
+                if instance.timeLeft <= 0
+                    instance.sp = SpellPhase.Deaccelerate
+                else
+                    //if charging is interruptable
+                    if INTERRUPTABLE_CHARGING and chargingInterrupt(instance.caster)
+                        //change phase to deaccelerate if interuption doesn't stop caster, else destroy spell instance
+                        if INTTERUPT_DEACCELERATE
+                            instance.sp = SpellPhase.Deaccelerate
+                        else
+                            instance.terminate(false)
+                    
+                    //if charging speed is not maxed
+                    if instance.curSpeed < MAX_SPEED
+                        //update caster speed
+                        instance.curSpeed += ACCELERATION
+
+                        if instance.curSpeed > MAX_SPEED
+                            instance.curSpeed = MAX_SPEED
+
+                        instance.distPerTick = instance.curSpeed*PERIODIC_TIME
+                            
+
+                    instance.update()
+            //------------End of Phase 2-------------
+            else if instance.sp == SpellPhase.Deaccelerate
+            //--------Phase 3 : Deaccelerate---------
+                //decrease speed
+                if instance.minusSpeed(ACCELERATION.toReal())
+                    instance.terminate(false)
+                else
+                    instance.distPerTick = instance.curSpeed*PERIODIC_TIME
+                    instance.update()
+            //------------End of Phase 3-------------
+
+    //================================================================
+
+
+
+    //=======================Mutator Functions========================
+    /**Decrease speed of caster, return true if speed is below END_SPEED*/
+    private function minusSpeed(real r) returns bool
+        this.curSpeed -= r
+        return this.curSpeed < END_SPEED
+    //================================================================
+
+
+
+    //=======================Accessor Functions=======================
+    /**Obtain unit `u` status in this class*/
+    static function getStatus(unit u) returns ChargeStatus
+        for instance in Charge
+            if instance.caster == u
+                return ChargeStatus(true, instance, instance.sp)
+
+        return ChargeStatus(false, null, 0 castTo SpellPhase)
+    //================================================================
+
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+class DebuffEffect
+    use LinkedListModule
+    //----------------------Ordinary Globals----------------------
+    private         unit    source
+    private         unit    effectUnit
+
+    /**source's handle id*/
+    private         int     handleId
+    private         int     appliedBuff    = 0
+
+    private         real    duration
+    
+    /**Determine if debuff is applyable*/
+    private         bool    applyable      = true
+
+    private static  timer   tim
+    //------------------------------------------------------------
+
+
+    //-----------------------Class Globals------------------------
+    private static HashMap<int,thistype> table  = new HashMap<int,thistype>()
+    //------------------------------------------------------------
+
+
+
+    //===================Creation/Destroy Functions===================
+    construct(unit toApply, int animationIndex, real duration, int abilityId)
+        var handleId = toApply.getHandleId()
+
+        if not table.has(handleId)
+            this.duration = duration
+            this.source = toApply
+            this.handleId = handleId
+            this.appliedBuff = abilityId
+            table.put(handleId, this)
+
+            var xyz = toApply.getPos3Fly()
+            xyz.z += DEBUFF_EFFECT_HEIGHT
+
+            toApply.addAbility(abilityId)
+
+            //create effect unit
+            this.effectUnit = createUnit(DUMMY_PLAYER, EFFECT_UNIT_ID, vec2(0, 0), angle(0))
+                ..setXYZ(xyz)
+                ..setAnimation(animationIndex)
+
+            if DebuffEffect.size == 1
+                tim = getTimer()
+                tim.startPeriodic(PERIODIC_TIME, function periodic)
+
+    ondestroy
+        this.effectUnit.remove()
+        this.source.removeAbility(this.appliedBuff)
+        table.remove(this.handleId)
+
+        if DebuffEffect.size == 1
+            tim.release()
+    //================================================================
+
+
+
+    //=========================Core Functions=========================
+    private static function periodic()
+        for instance in DebuffEffect
+            if instance.duration <= 0
+                destroy instance
+            else
+                instance.duration -= PERIODIC_TIME
+                
+                if instance.source.isAlive()
+                    //update effect unit position
+                    instance.effectUnit.setXY(instance.source.getPos())
+                else
+                    destroy instance
+
+    /**Renew this instance duration once applied debuff, debuff duration will not be overwriten, previous applied buff will be removed if `removeBuff` is true*/
+    function renew(real duration, bool removeBuff)
+        this.duration = duration
+        this.applyable = false
+
+        if removeBuff
+            this.source.removeAbility(this.appliedBuff)
+    //================================================================
+
+
+
+    //=======================Accessor Functions=======================
+    /**Obtain DebuffEffect instance from this unit, return null if not applied*/
+    static function get(unit u) returns thistype
+        let handleId = u.getHandleId()
+
+        if table.has(handleId)
+            return table.get(handleId)
+        else
+            return null
+
+    /**Check if debuff can be applied to this unit*/
+    function applyable() returns bool
+        return this.applyable
+    //================================================================
+
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+class Ban
+    use LinkedListModule
+    //----------------------Ordinary Globals----------------------
+    private         unit    affectUnit
+
+    private         real    duration
+
+    private         effect  e
+
+    private static  timer   tim
+    //------------------------------------------------------------
+
+
+
+    //===================Creation/Destroy Functions===================
+    construct(unit toBan)
+        SPELL_CASTER.issueTargetOrder(BANNED_ORDER_STRING, toBan)
+
+        this.duration   = BANNED_DURATION
+        this.affectUnit = toBan
+            ..addAbility(BANNED_ABILITY_ID)
+            
+        e = toBan.addEffect(BANNED_EFFECT_PATH, BANNED_EFFECT_ATTACH_POINT)
+        addUnitBonus(toBan, Bonus.ATTACKSPEED, -REDUCED_ATTACK_SPEED)
+
+        if Ban.size == 1
+            tim = getTimer()
+            tim.startPeriodic(PERIODIC_TIME, function periodic)
+
+    ondestroy
+        addUnitBonus(this.affectUnit, Bonus.ATTACKSPEED, REDUCED_ATTACK_SPEED)
+        this.e.destr()
+
+        if Ban.size == 1
+            tim.release()
+    //================================================================
+
+
+
+    //=========================Core Functions=========================
+    private static function periodic()
+        for instance in Ban
+            if instance.duration <= 0
+                destroy instance
+            else
+                instance.duration -= PERIODIC_TIME
+
+                if not instance.affectUnit.isAlive()
+                    destroy instance
+    //================================================================
+
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+class Heal
+    use LinkedListModule
+    //----------------------Ordinary Globals----------------------
+    private         unit    praisedUnit
+
+    private         real    duration
+    private         real    healRate
+
+    private         effect  e
+
+    private static  timer   tim
+    //------------------------------------------------------------
+
+
+
+    //===================Creation/Destroy Functions===================
+    construct(unit toHeal)
+        this.duration = HEAL_DURATION
+        this.healRate = toHeal.getMaxHP()*HEAL_RATE
+        this.praisedUnit = toHeal
+            ..addAbility(HEAL_ABILITY_ID)
+        
+        e = toHeal.addEffect(HEAL_EFFECT_PATH, HEAL_EFFECT_ATTACH_POINT)
+        
+        if Heal.size == 1
+            tim = getTimer()
+            tim.startPeriodic(1., function periodic)
+
+    ondestroy
+        this.praisedUnit.removeAbility(HEAL_ABILITY_ID)
+        this.e.destr()
+
+        if Heal.size == 1
+            tim.release()
+    //================================================================
+
+
+
+    //=========================Core Functions=========================
+    private static function periodic()
+        for instance in Heal
+            if instance.duration <= 0
+                destroy instance
+            else
+                instance.duration -= 1.
+
+                if instance.praisedUnit.isAlive()
+                    instance.praisedUnit.addHP(instance.healRate)
+                else
+                    destroy instance
+    //================================================================
+
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+function onChannel() returns bool
+    let u = GetTriggerUnit()
+    let c = u.getChargeStatus()
+
+    if GetSpellAbilityId() == MOOSE_CHARGE_SPELL_ID and not c.contains
+        u.newCharge()
+    
+    return false
+    
+function onOrder() returns bool
+    let c = GetTriggerUnit().getChargeStatus()
+
+    //issued order id not equal to "undefense" (582056)
+    if c.contains and c.sp == SpellPhase.Channel and GetIssuedOrderId() != 852056 
+        destroy c.instance
+
+    return false
+
+init
+    CreateTrigger()
+        ..registerAnyUnitEvent(EVENT_PLAYER_UNIT_SPELL_CHANNEL)
+        ..addCondition(Condition(function onChannel))
+
+    orderTrigger
+        ..registerAnyUnitEvent(EVENT_PLAYER_UNIT_ISSUED_ORDER)
+        ..addCondition(Condition(function onOrder))
+        ..disable()
+
+    SPELL_CASTER
+        ..addAbility(BANNED_ABILITY_ID)
+        //heal ability id not needed to be added as it uses Slow Aura (Tornado)
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+@compiletime function generateUnit()
+    new UnitDefinition(EFFECT_UNIT_ID, 'ewsp')
+        ..setNormalAbilities("Aloc,Amrf")
+        ..setIconGameInterface("ReplaceableTextures\\CommandButtons\\BTNtemp.blp")
+        ..setModelFile("rep new2.mdx")
+        ..setFoodCost(0)
+        ..setRace(Race.Commoner)
+        ..setSightRadiusDay(0)
+        ..setSightRadiusNight(0)
+        ..setUnitClassification("")
+        ..setName("Effect Dummy Unit")
+        ..setNameEditorSuffix(" (MooseCharge Spell)")
+/*================================================================================================*/    

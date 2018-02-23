@@ -1,0 +1,540 @@
+package MooseCharge_config
+
+/*=================================================================================================*
+*   Requirement :
+*
+*       Import IsDestructableTree which uses :
+*           1. isTree()                                                     */
+import IsDestructableTree
+
+/*
+*       Import Assets which uses :
+*           1. Abilities.defendCaster               
+*           2. Abilities.shockwaveMissle                                    */
+import Assets
+
+/*
+*       Import ChannelAbilityPreset which uses :
+*           1. class ChannelAbilityPreset                                   
+*           2. class AbilityFireLordSoulBurn
+*           3. ABIL_ID_GEN 
+*           4. int2fourchar()                                               */
+import ChannelAbilityPreset
+
+/*
+*       Import BuffObjEditing for :
+*           1. Generate buff                                                */
+import BuffObjEditing
+
+/*
+*       Import UnitObjEditing for :
+*           1. Create Moose hero                                            */
+import UnitObjEditing
+
+/*
+*==================================================================================================*
+*
+*   Configuration : 
+*
+*       Ability Id can be obtained by importing MooseCharge_config.wurst, and
+*       access with MOOSE_CHARGE_SPELL_ID
+*
+*       For hero id, access with MOOSE_ID
+*
+*=================================================================================================*/ 
+
+
+
+//----------------General Configuration-----------------
+//This function automatically generate new spell id during compile time, change it
+//if you want specific id for it.
+@config public constant MOOSE_CHARGE_SPELL_ID       = compiletime(ABIL_ID_GEN.next())
+
+//Spell channel time                                  
+@config constant CHANNEL_TIME                       = 2.0
+
+//Spell duration after completed charging time
+@config constant SPELL_DURATION                     = 8.0
+
+//If unit get damaged, this defined the attack type of the damage
+@config constant ATTACK_TYPE                        = ATTACK_TYPE_NORMAL
+
+//Rect hit size for detecting hittable unit from caster
+@config constant HIT_SIZE_X                         = 256
+@config constant HIT_SIZE_Y                         = 256
+
+//Stun duration when caster hit non-pathable path/building
+@config constant STUN_DURATION                      = 3.
+
+//Determine if destructable(tree) is destroyable
+@config constant DESTROY_TREE                       = true
+
+//Destroy tree if caster hit tree with speed above of this variable
+//If tree failed to be destroyed, spell instance will stop and stunning caster
+@config constant DESTROY_TREE_SPEED_THRESHOLD       = 300.
+
+//Determine the unit turn speed once spell actiavted
+@config constant TURN_SPEED                         = 0.05
+
+//Applies when unit get knockback
+//where 1 unit move speed of caster will be multiplied by CHARGE_SPEED_MULTIPLIER
+//as default starting velocity for knockback unit
+@config constant CHARGE_SPEED_MULTIPLIER            = 5.
+
+//Spell ending speed, which if below END_SPEED will destroy spell instance automatically
+@config constant END_SPEED                          = 150.
+
+//Constant acceleration that controls the increase/decrease of acceleration per PERIODIC_TIME
+@config constant ACCELERATION                       = 6
+
+//Duration for debuff which applies to hit unit (enemy unit, ally unit, building)
+@config constant DEBUFF_EFFECT_DURATION             = 7.
+
+//Define the trajectory angle of knockback unit
+@config constant KNOCKBACK_AIR_ANGLE                = angle(bj_PI/2)
+
+//Periodic run time
+@config constant PERIODIC_TIME                      = 0.03125
+
+//Function for filtering out unit who shouldn't get damaged/knockbacked
+//Default is set to apply to all units (including allies) except flying units
+@config function hittable(unit _toHit) returns bool
+    return _toHit.isAlive() and not _toHit.isType(UNIT_TYPE_FLYING)
+//------------------------------------------------------
+
+
+//-------------Channel Phase Configuration--------------
+//Unit's charge animation name
+@config constant CHARGE_ANIMATION_INDEX             = 1
+
+//Unit's charge animation speed
+@config constant CHARGE_ANIMATION_TIMESCALE         = 1.
+
+//Determine if spell is interruptable while caster is channelling
+@config constant INTERRUPTABLE_CHANNEL              = true
+
+//Function define the circumstances where if occur, channelling will be interrupted
+//Configure function below if INTERRUPTABLE_CHANNEL = true
+//Default : caster is died will interrupt the spell
+@config function chanellingInterrupt(unit _caster) returns bool
+    return not _caster.isAlive()
+//------------------------------------------------------
+
+
+//------------Charging Phase Configuration--------------
+//Unit's charge animation name
+@config constant CHANNEL_ANIMATION_INDEX            = 1
+
+//Unit's charge animation speed
+@config constant CHANNEL_ANIMATION_TIMESCALE        = 1.
+
+//Starting charging speed
+@config constant START_SPEED                        = 100.
+
+//Maximum charging speed
+@config constant MAX_SPEED                          = 1000.
+
+//True will causes unit to stop after hitting any unit, else spell will be continued
+@config constant STOP_AFTER_HIT                     = false
+
+//Determine if deacceleration will still apply after hitting a unit
+//True = deaccelerate after hitting a unit
+//False = stop instantly after hitting a unit
+@config constant DEACCELERATE_AFTER_HIT             = true
+
+//Determine if spell is interruptable while caster is charging
+@config constant INTERRUPTABLE_CHARGING             = true
+
+//Function define the circumstances where if occur, charging will be interrupted
+//Configure function below if INTERRUPTABLE_CHARGING is true
+//Default : interrupt charging if caster died
+@config function chargingInterrupt(unit _caster) returns bool
+    return not _caster.isAlive()
+
+//Determine if unit will still enter deacceleration after charging get interrupted
+//True : unit will still have deacceleration after interrupted
+//False : unit will stop immediately
+@config constant INTTERUPT_DEACCELERATE             = true
+
+//Function determine the decelerate after hitting a unit/destructable
+//Default is : every unit get hit will decrease caster speed by 150
+//             every destructable(tree) hit will decrease caster speed by 200
+@config function decelerate(unit _hit, destructable _destHit) returns real
+    if not _hit == null //if hit unit
+        return 150.
+    else if not _destHit == null and _destHit.isTree() //if hit tree
+        return 200.
+
+    return 0.
+//------------------------------------------------------
+
+
+//-----------------Effect Configuration-----------------
+//Effect that will be displayed when moose starts channeling phase
+@config constant EFFECT_CHANNEL                     = Abilities.shockwaveMissile
+
+//EFFECT_CHARGING attachment point
+@config constant CHANNEL_ATTACH_POINT               = "chest"
+
+//Effect that will be displayed when moose started it charging phase
+@config constant EFFECT_CHARGING                    = Abilities.shockwaveMissile
+
+//EFFECT_CHARGING attachment point
+@config constant CHARGE_ATTACH_POINT                = "chest"
+
+//Effect that will be displayed when hitting non-pathable path
+@config constant EFFECT_HIT_PATH                    = Abilities.defendCaster
+
+//Effect that will be applied when hitting a building
+@config constant EFFECT_HIT_BUILDING                = Abilities.defendCaster
+
+//Effect that will be displayed when hitting a unit
+@config constant EFFECT_HIT_UNIT                    = Abilities.defendCaster
+
+//EFFECT_HIT_PATH, EFFECT_HIT_BUILDING and EFFECT_HIT_UNIT attachment point
+@config constant HIT_ATTACH_POINT                   = "overhead"
+
+//height of debuff effect above the unit (starts from unit height)
+//Effect that apply once hit ally/enemy units, or above summons
+//once hit building
+@config constant DEBUFF_EFFECT_HEIGHT               = 200.
+//------------------------------------------------------
+
+
+//-------------Green/Red Gem Configuration--------------
+constant GREEN_GEM_ICON_PATH                        = "BTNPowerCrystal.var5.blp"
+
+constant GREEN_GEM_TOOLTIP                          = "|cff00ff00Green Gem|r"
+
+constant GREEN_GEM_TOOLTIP_EXTENDED                 = "General Moose gave this unit positive reputation."
+
+constant RED_GEM_ICON_PATH                          = "BTNPowerCrystal.blp"
+
+constant RED_GEM_TOOLTIP                            = "Red Gem"
+
+constant RED_GEM_TOOLTIP_EXTENDED                   = "General Moose punished this unit by giving negative reputation."
+
+constant BLUE_GEM_ICON_PATH                         = "BTNPowerCrystal.var6.blp"
+
+constant BLUE_GEM_TOOLTIP                           = "|cffffffffBlue Gem|r"
+
+constant BLUE_GEM_TOOLTIP_EXTENDED                  = "General Moose called this unit to assist him. Hence provided special reputation."
+//------------------------------------------------------
+
+
+//-------------Praise Ability Configuration-------------
+/*
+    Moose will praise his allies who already has debuff above it,
+    healing them over time
+*/
+@config constant HEAL_RATE                          = 0.01 //1% per seconds
+
+@config constant HEAL_DURATION                      = 10.
+
+//Animation index which determines the effect color
+//Check the model (Reputation for more info)
+@config constant HEAL_EFFECT_ANIMATION_INDEX        = 0
+
+@config function healAmount(real _speed) returns real
+    return _speed*0.1
+
+//Heal effect that applied to praised unit
+@config constant HEAL_EFFECT_PATH                   = "Healing Surge.mdx"
+
+//HEAL_EFFECT attachment point
+@config constant HEAL_EFFECT_ATTACH_POINT           = "origin"
+
+constant HEAL_BUFF_ICON_PATH                        = "BTNSilence.blp"
+
+constant HEAL_BUFF_TOOLTIP                          = "|cff00ff00Praised|r"
+
+constant HEAL_BUFF_TOOLTIP_EXTENDED                 = "This unit got praised. It will receives healing over time."
+//------------------------------------------------------
+
+
+//-------------Banned Ability Configuration-------------
+/*
+    Moose will lands a ban hammer on enemy unit who already has debuff above it,
+    silence it temporary as well as reducing its attack speed and movement speed
+*/
+@config constant REDUCED_ATTACK_SPEED               = 30 //30% reduction
+
+@config constant REDUCED_MOVEMENT_SPEED             = 30
+
+@config constant BANNED_DURATION                    = 5.
+
+//Animation index which determines the effect color
+@config constant BANNED_EFFECT_ANIMATION_INDEX      = 4
+
+//Function which determine the damage dealt to enemy units
+@onfig function damageUnit(unit _caster, unit _toDamage, real _casterSpeed) returns real
+    return 0.2*_casterSpeed
+
+//Banned effect that applied to banned unit
+@config constant BANNED_EFFECT_PATH                 = "Banhammer.mdx"
+
+//BANNED_EFFECT attachment point
+@config constant BANNED_EFFECT_ATTACH_POINT         = "overhead"
+
+constant BANNED_BUFF_ICON_PATH                      = "BTNSilence.blp"
+
+constant BANNED_BUFF_TOOLTIP                        = "Banned"
+
+constant BANNED_BUFF_TOOLTIP_EXTENDED               = "This unit got banned. It cannot cast spells and has reduced attack speed and movement speed."
+//------------------------------------------------------
+
+
+//-----------Assistance Ability Configuration-----------
+/*
+    Moose has the power to call for assistance for itself
+    to assist him after hitting a building
+*/
+@config constant ASSISTANCE_UNIT_ID                 = 'hfoo'
+
+@config constant ASSISTANCE_AMOUNT                  = 2
+
+@config constant ASSISTANCE_LIFETIME                = 15.
+
+//Animation index which determines the effect color
+@config constant ASSISTANCE_EFFECT_ANIMATION_INDEX  = 1
+
+//Function which determine the damage dealt to building
+@onfig function damageBuilding(unit _caster, unit _toDamage, real _casterSpeed) returns real
+    return 0.3*_casterSpeed
+//------------------------------------------------------
+
+
+//-----------MooseCharge Ability Configuration----------
+constant MC_BUTTON_POSITION_X                       = 0
+
+constant MC_BUTTON_POSITION_Y                       = 2
+
+constant MC_ICON_PATH                               = "ReplaceableTextures\\CommandButtons\\BTNChargeMooseSpell.blp"
+
+constant MC_HOTKEY_LEARN                            = "C"
+
+constant MC_HOTKEY_NORMAL                           = "C"
+
+constant MC_NAME                                    = "Moose |cffffcc00C|rharge"
+
+constant MC_COOLDOWN                                = 0.
+
+constant MC_MANA_COST                               = 0
+
+constant MC_TOOLTIP_LEARN                           = "Learn Moose |cffffcc00C|rharge"
+
+//uses this way to prevent overlong tooltip in 1 line
+constant MC_TOOLTIP_LEARN_EXTENDED                  = compiletime(mcTooltipLearnExtended())
+
+function mcTooltipLearnExtended() returns string
+    var s   = "Moose charge toward its facing, unit hit will be knockbacked, and applying "
+    s      += "effects which depend on owner of unit and type of unit."
+    s      += "\n\nDamage enemy, heal allies, creates assistance while hitting building"
+    return s
+
+constant MC_TOOLTIP_NORMAL                          = "Moose |cffffcc00C|rharge"
+
+/*
+*       Moose charge toward its facing, unit hit will be knockbacked,
+*       and applying effects depend on owner of unit and type of unit.
+*
+*       Channel Time  : 2 seconds
+*       Charging Time : 8 seconds
+*       
+*       Enemy unit : Speed*0.2 damage, apply red gem debuff; second hit ban the target,
+*                    silence and reducing 30% attack speed and 30% movement speed
+*
+*       Ally unit : Heal for speed*0.1, apply green gem buff; second hit praise the target,
+*                   heals for 1% maximum hitpoint of the target for 10 seconds
+*
+*       Structure : Speed*0.3 damage, terminate spell immediately. Spawn 2 assistance to assist
+*                   him, lasts for 15 seconds.
+*/
+constant MC_TOOLTIP_NORMAL_EXTENDED                 = compiletime(mcTooltipNormalExtended())
+
+function mcTooltipNormalExtended() returns string
+    var s   = "Moose charge toward its facing, unit hit will be knockbacked, and applying "
+    s      += "effects which depend on owner of unit and type of unit."
+    s      += "\nChannel Time : " + CHANNEL_TIME.toString() + " seconds"
+    s      += "\nCharge Time : " + SPELL_DURATION.toString() + " seconds"
+    s      += "\n\nEnemy unit : Speed*0.2 damage, apply red gem debuff; second hit ban the target"
+    s      += ", silence and reducing " + REDUCED_ATTACK_SPEED.toString() + "% attack speed and "
+    s      += REDUCED_MOVEMENT_SPEED.toString() + "% movement speed"
+    s      += "\n\nAlly unit : Heal for speed*0.1, apply green gem buff; second hit will praise the "
+    s      += "target, heals for " + (HEAL_RATE*100).toString() + "% maximum hitpoint of the unit for "
+    s      += HEAL_DURATION.toString() + " seconds"
+    s      += "\n\nStructure : Speed*0.3 damage, terminate spell immediately. Spawn "
+    s      += ASSISTANCE_AMOUNT.toString() + " assistance to assist him, lasts for "
+    s      += ASSISTANCE_LIFETIME.toString() + " seconds"
+    return s
+//------------------------------------------------------
+
+
+//-----------------Moose Unit Creation------------------
+public constant MOOSE_ID                            = compiletime(HERO_ID_GEN.next())
+
+//Self configure the hero to fit your own need
+@compiletime function generateMoose()
+    new HeroDefinition(MOOSE_ID, 'Hpal')
+        ..setHeroAbilities(int2fourchar(MOOSE_CHARGE_SPELL_ID))
+        ..setNormalAbilities("Ainv")
+        ..setIconGameInterface("ReplaceableTextures\\CommandButtons\\BTNTheTopMoose.blp")
+        ..setIconScoreScreen("ReplaceableTextures\\SSHTheTopMoose.blp")
+        ..setModelFile("Ralle.mdx")
+        ..setSpecial("")
+        ..setScalingValue(0.5)
+        ..setArmorSoundType(ArmorSoundType.Flesh)
+        ..setUnitSoundSet("Mammoth")
+        ..setName("Moose")
+        ..setProperNames("Moose General")
+        ..setProperNamesUsed(1)
+        ..setTooltipAwaken("Revive |cffffcc00M|roose")
+        ..setTooltipBasic("Summon |cffffcc00M|roose")
+        ..setTooltipExtended("Melee Hero, skilled in both punishment and postive reinforcement. Can learn Moose Charge.\n\n|cffffcc00Attacks land units.|r")
+        ..setTooltipRevive("Revive |cffffcc00M|roose")
+//------------------------------------------------------
+
+
+
+
+
+/*================================================================================================*/
+@config constant BANNED_ABILITY_ID                  = compiletime(ABIL_ID_GEN.next())
+@config constant HEAL_ABILITY_ID                    = compiletime(ABIL_ID_GEN.next())
+@config constant RED_GEM_ABILITY_ID                 = compiletime(ABIL_ID_GEN.next())
+@config constant GREEN_GEM_ABILITY_ID               = compiletime(ABIL_ID_GEN.next())
+@config constant BLUE_GEM_ABILITY_ID                = compiletime(ABIL_ID_GEN.next())
+@config constant BANNED_ORDER_STRING                = "soulburn"
+
+@compiletime function generateAbility()
+    //MooseCharge
+    new ChannelAbilityPreset(MOOSE_CHARGE_SPELL_ID, 1, true)
+        //General Configuration
+        ..setTargetAttachmentPoint1("")
+        ..setButtonPositionNormalX(MC_BUTTON_POSITION_X)
+        ..setButtonPositionNormalY(MC_BUTTON_POSITION_Y)
+        ..setIconNormal(MC_ICON_PATH)
+        ..setHotkeyLearn(MC_HOTKEY_LEARN)
+        ..setHotkeyNormal(MC_HOTKEY_NORMAL)
+        ..setName(MC_NAME)
+        ..setOrderStringUseTurnOn(MC_HOTKEY_NORMAL)
+        ..setTooltipLearn(MC_TOOLTIP_LEARN)
+        ..setTooltipLearnExtended(MC_TOOLTIP_LEARN_EXTENDED)
+        
+        //All Lvl Configuration
+        ..presetBaseOrderID((int lvl) -> "channel")
+        ..presetDisableOtherAbilities((int lvl) -> true)
+        ..presetCastRange((int lvl) -> 0)
+        ..presetFollowThroughTime((int lvl) -> 0)
+        
+        //Specified Lvl Configuration
+        ..setCastRange(1, 0)
+        ..setCooldown(1, MC_COOLDOWN)
+        ..setManaCost(1, MC_MANA_COST)
+        ..setTooltipNormal(1, MC_TOOLTIP_NORMAL)
+        ..setTooltipNormalExtended(1, MC_TOOLTIP_NORMAL_EXTENDED)
+
+    
+    var buffId = BUFF_ID_GEN.next()
+
+    //Ban ability
+    new AbilityDefinitionFirelordSoulBurn(BANNED_ABILITY_ID)
+        ..setLevels(1)
+        ..setEditorSuffix(" (MooseCharge Spell)")
+        ..setName(BANNED_BUFF_TOOLTIP)
+        ..setOrderStringUseTurnOn(BANNED_ORDER_STRING)
+        ..setCastRange(1, 99999)    //inifite cast range
+        ..setDamageAmount(1, 0)
+        ..setDamagePenalty(1, 0)
+        ..setDamagePeriod(1, 0)
+        ..setMovementSpeedReduction(1, REDUCED_MOVEMENT_SPEED/100.)
+        ..setBuffs(1, int2fourchar(buffId))
+        ..setDurationHero(1, BANNED_DURATION)
+        ..setDurationNormal(1, BANNED_DURATION)
+        ..setManaCost(1, 0)
+        ..setTargetsAllowed(1, "invulnerable,vulnerable")
+
+    //Ban buff
+    new BuffDefinition(buffId, 'Basl')
+        ..setIcon(BANNED_BUFF_ICON_PATH)
+        ..setTarget(1, "")
+        ..setEditorSuffix(1, " (MooseCharge Spell)")
+        ..setTooltipNormal(1, BANNED_BUFF_TOOLTIP)
+        ..setTooltipNormalExtended(1, BANNED_BUFF_TOOLTIP_EXTENDED)
+
+
+    buffId = BUFF_ID_GEN.next()
+
+    //Heal ability
+    new AbilityDefinitionAuraSlow(HEAL_ABILITY_ID)
+        ..setMovementSpeedFactor(1, 0.)
+        ..setBuffs(1, int2fourchar(buffId))
+        ..setTargetsAllowed(1, "self")
+        ..setEditorSuffix(" (MooseCharge Spell)")
+        ..setName(HEAL_BUFF_TOOLTIP)
+
+    //Heal buff
+    new BuffDefinition(buffId, 'Basl')
+        ..setIcon(HEAL_BUFF_ICON_PATH)
+        ..setTarget(1, "")
+        ..setEditorSuffix(1, " (MooseCharge Spell)")
+        ..setTooltipNormal(1, HEAL_BUFF_TOOLTIP)
+        ..setTooltipNormalExtended(1, HEAL_BUFF_TOOLTIP_EXTENDED)
+
+
+    buffId = BUFF_ID_GEN.next()
+    
+    //Red gem ability
+    new AbilityDefinitionAuraSlow(RED_GEM_ABILITY_ID)
+        ..setMovementSpeedFactor(1, 0.)
+        ..setBuffs(1, int2fourchar(buffId))
+        ..setTargetsAllowed(1, "self")
+        ..setEditorSuffix(" (MooseCharge Spell)")
+        ..setName(RED_GEM_TOOLTIP)
+
+    //Red gem
+    new BuffDefinition(buffId, 'Basl')
+        ..setIcon(RED_GEM_ICON_PATH)
+        ..setTarget(1, "")
+        ..setEditorSuffix(1, " (MooseCharge Spell)")
+        ..setTooltipNormal(1, RED_GEM_TOOLTIP)
+        ..setTooltipNormalExtended(1, RED_GEM_TOOLTIP_EXTENDED)
+
+        
+    buffId = BUFF_ID_GEN.next()
+    
+    //Green gem ability
+    new AbilityDefinitionAuraSlow(GREEN_GEM_ABILITY_ID)
+        ..setMovementSpeedFactor(1, 0.)
+        ..setBuffs(1, int2fourchar(buffId))
+        ..setTargetsAllowed(1, "self")
+        ..setEditorSuffix(" (MooseCharge Spell)")
+        ..setName(GREEN_GEM_TOOLTIP)
+
+    //Green gem
+    new BuffDefinition(buffId, 'Basl')
+        ..setIcon(GREEN_GEM_ICON_PATH)
+        ..setTarget(1, "")
+        ..setEditorSuffix(1, " (MooseCharge Spell)")
+        ..setTooltipNormal(1, GREEN_GEM_TOOLTIP)
+        ..setTooltipNormalExtended(1, GREEN_GEM_TOOLTIP_EXTENDED)
+
+
+    buffId = BUFF_ID_GEN.next()
+
+    //Blue gem ability
+    new AbilityDefinitionAuraSlow(BLUE_GEM_ABILITY_ID)
+        ..setMovementSpeedFactor(1, 0.)
+        ..setBuffs(1, int2fourchar(buffId))
+        ..setTargetsAllowed(1, "self")
+        ..setEditorSuffix(" (MooseCharge Spell)")
+        ..setName(BLUE_GEM_TOOLTIP)
+
+    //Green gem
+    new BuffDefinition(buffId, 'Basl')
+        ..setIcon(BLUE_GEM_ICON_PATH)
+        ..setTarget(1, "")
+        ..setEditorSuffix(1, " (MooseCharge Spell)")
+        ..setTooltipNormal(1, BLUE_GEM_TOOLTIP)
+        ..setTooltipNormalExtended(1, BLUE_GEM_TOOLTIP_EXTENDED)
+/*================================================================================================*/

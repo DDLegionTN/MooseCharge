@@ -1,0 +1,211 @@
+package Stun
+/*==================================================================================================*
+*                                                                                             
+*    System Description :   
+*
+*       Stun - Version 1.2.0.0 - By iAyanami aka Ayanami (vJASS version), translated to Wurst.
+*   
+*       An easy to use system that stuns units
+*       Able to keep track of the remaining stun duration                                                 
+*                                                                                   
+*===================================================================================================*
+*
+*   Requirements :
+*       Import Table for :
+*           1. Mapping unit handle id to class index                */
+import HashMap
+
+/*
+*       Import LinkedListModule for :
+*           1. Turn class into link list                            */
+import LinkedListModule
+
+/*
+*       Import AbilityObjEditing which uses :
+*           1. class AbilityDefinitionFireBoltcreep                 */
+import AbilityObjEditing
+
+/*
+*       Import BuffObjEditing which uses :
+*           1. class BuffDefinition                                 */
+import BuffObjEditing
+
+/*
+*       Import ObjectIds which uses :
+*           1. int2fourchar()                                       */
+import ObjectIds
+
+/*
+*==================================================================================================*
+*
+*   API ：
+*       1. Stun.apply(unit u, real dur, bool b)
+*       2. Stun.getDuration(unit u)                 (real)
+*       3. Stun.remove(unit u)
+*
+*==================================================================================================*
+*
+*   Configuration : 
+*
+*       ABILID and BUFFID are automatically generated in Stun system, but not STUNID
+*                                                                                                 */                                     
+// vJASS version was set at 0.03125
+/** Timer period. lower the value, the more accurate but might cause decrease in performance*/
+constant PERIOD                 = 0.05
+
+/** Tooltip for stun buff*/
+constant STUN_TOOLTIP           = "Stunned"
+
+/** Extended tooltip for stun buff*/
+constant STUN_TOOLTIP_EXTENDED  = "This unit is stunned. It cannot move nor attack temporarily."
+
+/** Raw code of unit "Stun Dummy"*/
+constant STUNID                 = 'xdum'
+
+/** Raw code of ability "Stun (System)"*/
+constant ABILID                 = 'ASTN'
+
+/** Raw code of buff "Stun (System)"*/
+constant BUFFID                 = 'BSTN'
+/*================================================================================================*/
+
+
+
+
+
+/*============================================Globals=============================================*/
+unit caster
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+public class Stun
+    use LinkedListModule
+
+    //----------------------Ordinary Globals----------------------
+    private         unit                    u
+    private         real                    dur
+
+    private static  timer                   t       = CreateTimer()
+    private static  integer                 count   = 0
+    //------------------------------------------------------------
+
+
+    //-----------------------Class Globals------------------------
+    private static  HashMap<int, thistype>  map     = new HashMap<int, thistype>()
+    //------------------------------------------------------------
+
+
+
+    //===================Creation/Destroy Functions===================
+    private construct(unit u, real dur)
+        this.u = u
+        this.dur = dur
+
+        count++
+        if count == 1
+            t.startPeriodic(PERIOD, function iterate)
+            
+    ondestroy
+        this.u.removeAbility(BUFFID)
+        
+        count--
+        if count == 0
+            t.pause()
+
+        map.remove(this.u.getHandleId())
+    //================================================================
+
+
+
+    //=======================Ordinary Functions=======================
+    /** Iterating through all instances every PERIOD*/
+    private static function iterate()
+        for instance in Stun
+            if instance.dur <= 0 or instance.u.isType(UNIT_TYPE_DEAD) or instance.u.getTypeId() == 0
+                destroy instance
+            else
+                instance.dur -= PERIOD
+
+    /** Stun `whichTarget` with duration of `dur`. `b` determines whether the stun duration stackable or not.*/
+    static function apply(unit u, real dur, bool b)
+        var index = u.getHandleId()
+        thistype instance
+
+        if map.has(index)
+            instance = map.get(index)
+
+            if b
+                instance.dur += dur
+            else
+                instance.dur = dur
+        else
+            instance = new Stun(u, dur)
+            map.put(index, instance)
+            
+            caster.issueTargetOrder("firebolt", instance.u)
+
+    /** Immediately removes stun for the specified unit `u`*/
+    static function remove(unit u)
+        let index = u.getHandleId()
+        
+        if map.has(index)
+            destroy map.get(index)
+    //================================================================
+
+
+
+    //=======================Accessor Functions=======================
+    /** Gets the stun duration left for `u`, not stunned units always return 0*/
+    static function getDuration(unit u) returns real
+        return map.get(u.getHandleId()).dur
+    //================================================================
+
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+init
+    caster = CreateUnit(Player(13), STUNID, 0, 0, 0)
+
+    caster.addAbility(ABILID)
+/*================================================================================================*/
+
+
+
+
+
+/*================================================================================================*/
+@compiletime function generateBuff()
+    new BuffDefinition(BUFFID, 'BPSE')
+        ..setIcon("ReplaceableTextures\\CommandButtons\\BTNStun.blp")
+        ..setTargetAttachments(0, 1)
+        ..setEditorSuffix(0, "")
+        ..setName(0, "Stun (System)")
+        ..setTooltipNormal(0, STUN_TOOLTIP)
+        ..setTooltipNormalExtended(0, STUN_TOOLTIP_EXTENDED)
+
+@compiletime function generateAbility()
+    new AbilityDefinitionFireBoltcreep(ABILID)
+        ..setAnimationNames("")
+        ..setIconNormal("")
+        ..setMissileArt("")
+        ..setMissileSpeed(0)
+        ..setDamage(1, 0)
+        ..setBuffs(1, int2fourchar(BUFFID))
+        ..setCastRange(1, 99999.)
+        ..setCooldown(1, 0.)
+        ..setDurationHero(1, 9999.)
+        ..setDurationNormal(1, 9999.)
+        ..setManaCost(1, 0)
+        ..setEditorSuffix("")
+        ..setName("Stun (System)")
+        ..setTooltipNormal(1, "")
+        ..setTooltipNormalExtended(1, "")
+/*================================================================================================*/
